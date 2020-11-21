@@ -282,16 +282,7 @@ bool Program::build(const char *options, list<Header> headers)
   }
   args.push_back(cl_ext.c_str());
 
-  // Disable Clang's optimizations.
-  // We will manually run optimization passes and legalize the IR later.
-  args.push_back("-O0");
-
-  bool optimize = true;
   const char *clstd = NULL;
-
-  // Disable optimizations by default if in interactive mode
-  if (checkEnv("OCLGRIND_INTERACTIVE"))
-    optimize = false;
 
   // Add OpenCL build options
   const char *mainOptions = options;
@@ -319,18 +310,6 @@ bool Program::build(const char *options, list<Header> headers)
         strcmp(opt, "-cl-single-precision-constant") &&
         strcmp(opt, "-cl-unsafe-math-optimizations") != 0)
     {
-      // Check for optimization flags
-      if (strcmp(opt, "-O0") == 0 || strcmp(opt, "-cl-opt-disable") == 0)
-      {
-        optimize = false;
-        continue;
-      }
-      else if (strncmp(opt, "-O", 2) == 0)
-      {
-        optimize = true;
-        continue;
-      }
-
       // Clang no longer supports -cl-no-signed-zeros
       if (strcmp(opt, "-cl-no-signed-zeros") == 0)
         continue;
@@ -493,29 +472,6 @@ bool Program::build(const char *options, list<Header> headers)
     if (!checkEnv("OCLGRIND_INTERACTIVE"))
     {
       stripDebugIntrinsics();
-    }
-
-    // Run optimizations on module
-    if (optimize)
-    {
-      // Initialize pass managers
-      llvm::legacy::PassManager modulePasses;
-      llvm::legacy::FunctionPassManager functionPasses(m_module.get());
-
-      // Populate pass managers with -Oz
-      llvm::PassManagerBuilder builder;
-      builder.OptLevel = 2;
-      builder.SizeLevel = 2;
-      builder.populateModulePassManager(modulePasses);
-      builder.populateFunctionPassManager(functionPasses);
-
-      // Run passes
-      functionPasses.doInitialization();
-      llvm::Module::iterator fItr;
-      for (fItr = m_module->begin(); fItr != m_module->end(); fItr++)
-        functionPasses.run(*fItr);
-      functionPasses.doFinalization();
-      modulePasses.run(*m_module);
     }
 
     removeLValueLoads();
